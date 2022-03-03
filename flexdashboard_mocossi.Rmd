@@ -329,8 +329,8 @@ datatable(X, class = 'compact stripe hover',
 ### Floor listings by trait
 ```{r}
 X <- DTL[, .SD[price == min(price)], .(trait_category, trait)][order(trait_category, trait)]
-X[, img := sprintf('<img src="%s%s.png" class="img_html">', img_link, gsub("adape", "", asset_name))]
-X[, img := sprintf('<a href="%s" target="_blank">%s</br>#%s</a>', link, img, gsub("adape", "", asset_name))]
+X[, img := sprintf('<img src="%s%d.png" class="img_html">', img_link, asset_number)]
+X[, img := sprintf('<a href="%s" target="_blank">%s</br>#%s</a>', link, img, asset_number)]
 
 X <- X[, .(trait_category, trait, img, price, asset_rank, market, asset_traits)]
 
