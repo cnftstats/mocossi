@@ -17,7 +17,7 @@ RAR <- readRDS(sprintf("data/RAR_%s.rds", project_label))
 
 
 # Functions ----------------------------------------------------------------------------------------
-extract_num <- function(x) as.numeric(regmatches(x, regexpr("[[:digit:]]+", x)))
+extract_num <- function(x) as.numeric(gsub("[^0-9\\-]+","",as.character(x)))
 
 loj <- function (X = NULL, Y = NULL, onCol = NULL) {
   if (truelength(X) == 0 | truelength(Y) == 0) 
@@ -25,10 +25,6 @@ loj <- function (X = NULL, Y = NULL, onCol = NULL) {
   n <- names(Y)
   X[Y, `:=`((n), mget(paste0("i.", n))), on = onCol]
 }
-
-
-# CNFT listings ------------------------------------------------------------------------------------
-api_link_cnft <- "https://api.cnft.io/market/listings"
 
 query <- function(page, url, project, sold) {
   httr::content(httr::POST(
@@ -60,6 +56,10 @@ query_n <- function(url, project, sold, n = "all") {
   out
 }
 
+
+# CNFT listings ------------------------------------------------------------------------------------
+api_link_cnft <- "https://api.cnft.io/market/listings"
+
 .CNFT <- query_n(api_link_cnft, project, sold = FALSE) |>
   lapply(data.table) |> rbindlist(fill = TRUE)
 
@@ -82,7 +82,9 @@ for (i in 1:nrow(.CNFT)) {
 }
 
 CNFT <- CNFT[2:nrow(CNFT)] # Clear first row from initialization
-CNFT[, asset_number := extract_num(asset)]
+CNFT <- CNFT[!asset %like% "Collectible|Magic|Christmas|-2-"]
+CNFT[, asset        := gsub("Mocossi-Ito-", "Mocossi Ito #", asset)]
+CNFT[, asset_number := abs(extract_num(asset))]
 CNFT[, price        := price/10**6]
 CNFT[, sc           := ifelse(is.na(sc), "no", "yes")]
 
@@ -115,7 +117,9 @@ for (i in 1:nrow(.CNFTS)) {
 }
 
 CNFTS <- CNFTS[2:nrow(CNFTS)] # Clear first row from initialization
-CNFTS[, asset_number  := extract_num(asset)]
+CNFTS <- CNFTS[!asset %like% "Collectible|Magic|Christmas|-2-"]
+CNFTS[, asset         := gsub("Mocossi-Ito-", "Mocossi Ito #", asset)]
+CNFTS[, asset_number  := abs(extract_num(asset))]
 CNFTS[, price         := price/10**6]
 CNFTS[, market        := "cnft.io"]
 CNFTS[, sold_at       := as_datetime(sold_at)]
@@ -128,36 +132,46 @@ CNFTS <- CNFTS[sold_at_hours <= 24*3]
 
 
 # JPG listings -------------------------------------------------------------------------------------
-# jpg.store/api/policy - all supported policies
-# jpg.store/api/policy/[id]/listings - listings for a given policy
-# jpg.store/api/policy/[id]/sales - sales for a given policy
-api_link <- sprintf("jpg.store/api/policy/%s/listings", policy_id)
+JPG_list <- list()
+p <- 1
+while (TRUE) {
+  api_link <- sprintf("https://server.jpgstoreapis.com/policy/%s/listings?page=%d", policy_id, p)
+  X <- data.table(fromJSON(rawToChar(GET(api_link)$content)))
+  if (nrow(X) == 0) break
+  JPG_list[[p]] <- X
+  p <- p + 1
+}
 
-JPG <- data.table(fromJSON(rawToChar(GET(api_link)$content)))
-JPG[, link         := paste0("https://www.jpg.store/asset/", asset)]
-JPG[, price        := price_lovelace]
-JPG[, asset        := asset_display_name]
-JPG[, asset        := gsub("Mocossi-Ito-", "Mocossi Ito #", asset_display_name)]
-JPG[, asset_number := extract_num(asset)]
-JPG[, price        := price/10**6]
-JPG[, sc           := "yes"]
-JPG[, market       := "jpg.store"]
+JPG <- rbindlist(JPG_list)
+
+JPG[, link           := paste0("https://www.jpg.store/asset/", asset_id)]
+JPG[, asset          := display_name]
+JPG[, asset          := gsub("Mocossi-Ito-", "Mocossi Ito #", display_name)]
+JPG[, price          := price_lovelace/10**6]
+JPG[, sc             := "yes"]
+JPG[, market         := "jpg.store"]
+JPG[, asset_number   := abs(extract_num(asset))]
 
 JPG <- JPG[, .(asset, asset_number, type = "listing", price, last_offer = NA, sc, market, link)]
 
 
 # JPG sales ----------------------------------------------------------------------------------------
-api_link <- sprintf("jpg.store/api/policy/%s/sales", policy_id)
+JPGS_list <- lapply(1:7, function(p) {
+  api_link <- sprintf("https://server.jpgstoreapis.com/policy/%s/sales?page=%d", policy_id, p)
+  X <- data.table(fromJSON(rawToChar(GET(api_link)$content)))
+  return(X)
+})
 
-JPGS <- data.table(fromJSON(rawToChar(GET(api_link)$content)))
-JPGS[, price         := price_lovelace]
-JPGS[, asset         := gsub("Mocossi-Ito-", "Mocossi Ito #", asset_display_name)]
-JPGS[, asset_number  := extract_num(asset)]
-JPGS[, price         := price/10**6]
-JPGS[, market        := "jpg.store"]
-JPGS[, sold_at       := as_datetime(purchased_at)]
-JPGS[, sold_at_hours := difftime(time_now, sold_at, units = "hours")]
-JPGS[, sold_at_days  := difftime(time_now, sold_at, units = "days")]
+JPGS <- rbindlist(JPGS_list)
+
+JPGS[, asset          := display_name]
+JPGS[, asset          := gsub("Mocossi-Ito-", "Mocossi Ito #", display_name)]
+JPGS[, price          := price_lovelace/10**6]
+JPGS[, market         := "jpg.store"]
+JPGS[, asset_number   := abs(extract_num(asset))]
+JPGS[, sold_at        := as_datetime(confirmed_at)]
+JPGS[, sold_at_hours  := difftime(time_now, sold_at, units = "hours")]
+JPGS[, sold_at_days   := difftime(time_now, sold_at, units = "days")]
 
 JPGS <- JPGS[order(-sold_at), .(asset, asset_number, price, sold_at, sold_at_hours,
                                 sold_at_days, market)]
