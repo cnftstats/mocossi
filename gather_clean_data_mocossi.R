@@ -253,7 +253,7 @@ DTS[, rank_range := fcase(asset_rank %between% c(1,    10),   "1-10",
 
 
 # Large format -------------------------------------------------------------------------------------
-.cols <- names(DT)[names(DT) %like% "asset_trait_"]
+.cols <- names(DT)[names(DT) %like% "^asset_trait_"]
 DTL <- data.table(gather(DT, key, value, all_of(.cols)))
 
 DTL[, trait_category := strsplit(value, "_")[[1]][1], 1:nrow(DTL)]
